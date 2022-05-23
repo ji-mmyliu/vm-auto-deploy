@@ -42,6 +42,7 @@ class Repo(db.Model):
         return f"(id: {self.id}, name: {self.name}, deploy_key: {self.deploy_key}, owner_id: {self.owner_id})"
 
 class LoginForm(FlaskForm):
+    username = StringField('Username', validators=[DataRequired()])
     password = PasswordField('Password', validators=[DataRequired()])
     submit = SubmitField('Login')
 

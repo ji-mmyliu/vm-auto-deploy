@@ -57,6 +57,11 @@ def home():
     else:
         return redirect("/login")
 
+@app.route("/dashboard")
+@login_required
+def dashboard():
+    return render_template("dashboard.html", repos = Repo.query.filter_by(owner_id = current_user.id).all())
+
 @app.route("/login", methods=['GET', 'POST'])
 def login():
     if current_user.is_authenticated:
@@ -70,7 +75,7 @@ def login():
             return redirect("/login")
         if bcrypt.checkpw(form.password.data.encode(), usr.password):
             login_user(usr)
-            return redirect("/tasks")
+            return redirect("/dashboard")
         else:
             flash("Error: Password does not match with username")
             return redirect("/login")

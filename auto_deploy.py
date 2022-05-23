@@ -8,7 +8,7 @@ from flask_wtf import FlaskForm
 from wtforms import StringField, PasswordField, SubmitField
 from wtforms.validators import DataRequired
 from flask_sqlalchemy import SQLAlchemy
-import os, subprocess, bcrypt
+import os, subprocess, bcrypt, secrets
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///site.db'
@@ -33,7 +33,6 @@ class User(db.Model, UserMixin):
 class Repo(db.Model):
     id = db.Column(db.Integer, primary_key = True)
     name = db.Column(db.String(20), unique = True, nullable = False)
-    service_name = db.Column(db.String(20), unique = True, nullable = False)
     deploy_key = db.Column(db.String(20), nullable = False)
 
     owner_id = db.Column(db.Integer, db.ForeignKey("user.id"))
@@ -46,11 +45,16 @@ class LoginForm(FlaskForm):
     password = PasswordField('Password', validators=[DataRequired()])
     submit = SubmitField('Login')
 
+class RepoForm(FlaskForm):
+    name = StringField('Exact Git repository name', validators=[DataRequired()])
+    submit = SubmitField('Deploy Repository')
+
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
 
 @app.route("/")
+@app.route("/home")
 def home():
     if current_user.is_authenticated:
         return redirect("/dashboard")
@@ -62,24 +66,53 @@ def home():
 def dashboard():
     return render_template("dashboard.html", repos = Repo.query.filter_by(owner_id = current_user.id).all())
 
+@app.route("/repo/new", methods = ['GET', 'POST'])
+@login_required
+def new_repo():
+    form = RepoForm()
+    if form.validate_on_submit():
+        if Repo.query.filter_by(name = form.name.data):
+            flash("Error: A repository with this name already exists.", "danger")
+            return redirect("/repo/new")
+        if not os.path.isdir(form.name.data):
+            flash(f"Error: The directory \"{os.path.join(os.getcwd, form.name.data)}\" does not exist.", "danger")
+            return redirect("/repo/new")
+        if not os.path.isfile(f"/etc/systemd/system/{form.name.data}"):
+            flash(f"Error: {form.name.data}.service has not been created in /etc/systemd/system.", "danger")
+            return redirect("/repo/new")
+            
+        deploy_key = secrets.token_hex()
+        repo = Repo(name = form.name.data, deploy_key = bcrypt.hashpw(deploy_key.encode(), bcrypt.gensalt()), owner_id = current_user.id)
+        db.session.add(repo)
+        db.session.commit()
+        flash(f"Successfully deployed '{repo.name}'. Your deploy key is <code>{deploy_key}<code>. **This key will only be shown once**. If you lose it, you may request a new one in your dashboard.")
+        return redirect("/dashboard")
+    return render_template("new_repo.html", form = form)
+
 @app.route("/login", methods=['GET', 'POST'])
 def login():
     if current_user.is_authenticated:
         return redirect("/")
-
     form = LoginForm()
     if form.validate_on_submit():
         usr = User.query.filter_by(username = form.username.data).first()
         if not usr:
-            flash("Error: Username not found")
+            flash("Error: Username not found", "danger")
             return redirect("/login")
         if bcrypt.checkpw(form.password.data.encode(), usr.password):
             login_user(usr)
+            flash(f"Successfully logged in as {usr.username}", "success")
             return redirect("/dashboard")
         else:
-            flash("Error: Password does not match with username")
+            flash("Error: Password does not match with username", "danger")
             return redirect("/login")
     return render_template("login.html", form = form)
+
+@app.route("/logout")
+def logout():
+    logout_user()
+    flash('Successfully logged out. See you later!', 'success')
+    return redirect("/home")
 
 @app.route("/deploy", methods = ['POST'])
 def deploy():

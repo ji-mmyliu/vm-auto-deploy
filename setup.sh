@@ -52,9 +52,9 @@ then
 fi
 
 source venv/bin/activate
+python3 -c "import secrets; print(secrets.token_hex());" > .secret_key
 python3 -m pip install -r requirements.txt
 python3 -c "from auto_deploy import db; db.create_all();"
-python3 -c "import secrets; print(secrets.token_hex());" > .secret_key
 deactivate
 
 sed -i "s/{{user}}/$USER/g" "auto_deploy.service"
